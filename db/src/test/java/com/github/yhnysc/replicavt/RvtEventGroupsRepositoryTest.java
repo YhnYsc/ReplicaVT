@@ -3,6 +3,7 @@ package com.github.yhnysc.replicavt;
 import com.github.yhnysc.replicavt.api.RvtEventGroupsRepository;
 import com.github.yhnysc.replicavt.db.EtcdRepositoryTest;
 import com.github.yhnysc.replicavt.db.data.RvtEventGroups;
+import com.github.yhnysc.replicavt.db.data.RvtEventGroupsKey;
 import com.github.yhnysc.replicavt.db.data.RvtTableGroups;
 import com.github.yhnysc.replicavt.db.repo.RvtEventGroupsRepositoryImpl;
 import org.junit.jupiter.api.Assertions;
@@ -36,7 +37,7 @@ public class RvtEventGroupsRepositoryTest {
         eventGroup.setBulkSize(100);
         eventGroup.addTableGroup(tableGroup);
         _eventGroupsRepo.save(eventGroup);
-        Optional<RvtEventGroups> result = _eventGroupsRepo.find("EG1");
+        Optional<RvtEventGroups> result = _eventGroupsRepo.findOne(new RvtEventGroupsKey("EG1"));
         Assertions.assertTrue(result.isPresent());
         Assertions.assertEquals("EG1", result.get().getEventGroupName());
         Assertions.assertEquals(100, result.get().getBulkSize());

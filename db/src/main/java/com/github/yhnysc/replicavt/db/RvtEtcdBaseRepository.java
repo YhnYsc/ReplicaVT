@@ -55,7 +55,7 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
         if (key == null) {
             throw new IllegalArgumentException("Key shouldn't be null!");
         }
-        final String fullKeyPath = etcdPrefix() + key.recordKey();
+        final String fullKeyPath = etcdPrefix() + key.etcdKey();
         try {
             DeleteResponse resp = _etcdCli.getKVClient().delete(
                     ByteSequence.from(ByteString.copyFromUtf8(fullKeyPath))
@@ -89,7 +89,7 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
         if(getOption.isPresent() && !getOption.get().isPrefix()){
             throw new IllegalArgumentException("The GetOption must set to isPrefix(true) for this method");
         }
-        final String prefixKeyPath = etcdPrefix() + key.recordKey();
+        final String prefixKeyPath = etcdPrefix() + key.etcdKey();
         try{
             final List<T> resultList = new ArrayList<>();
             final GetResponse resp;
@@ -118,7 +118,7 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
         if (key == null) {
             throw new IllegalArgumentException("Key shouldn't be null!");
         }
-        final String fullKeyPath = etcdPrefix() + key.recordKey();
+        final String fullKeyPath = etcdPrefix() + key.etcdKey();
         try{
             final GetResponse resp;
             if(getOption.isPresent()) {

@@ -2,8 +2,8 @@ package com.github.yhnysc.replicavt.db.repo;
 
 import com.github.yhnysc.replicavt.api.RvtEventGroupsRepository;
 import com.github.yhnysc.replicavt.db.RvtEtcdBaseRepository;
-import com.github.yhnysc.replicavt.db.RvtEtcdKey;
 import com.github.yhnysc.replicavt.db.data.RvtEventGroups;
+import com.github.yhnysc.replicavt.db.data.RvtEventGroupsKey;
 import com.github.yhnysc.replicavt.db.data.RvtTableGroups;
 import com.google.gson.Gson;
 import io.etcd.jetcd.Client;
@@ -16,14 +16,9 @@ import java.util.List;
 import java.util.Optional;
 
 @Component
-public class RvtEventGroupsRepositoryImpl extends RvtEtcdBaseRepository<RvtEventGroups, RvtEtcdKey> implements RvtEventGroupsRepository<RvtEventGroups, RvtEtcdKey> {
+public class RvtEventGroupsRepositoryImpl extends RvtEtcdBaseRepository<RvtEventGroups, RvtEventGroupsKey> implements RvtEventGroupsRepository {
     @Autowired
     public RvtEventGroupsRepositoryImpl(final Client etcdCli, final Gson gson) { super(etcdCli, gson, RvtEventGroups.class);}
-
-    @Override
-    public Optional<RvtEventGroups> find(String eventGroupName) {
-        return super.findOne(()-> eventGroupName);
-    }
 
     /**
      * Get the table group list of the event group, order by the table group priority
@@ -33,7 +28,7 @@ public class RvtEventGroupsRepositoryImpl extends RvtEtcdBaseRepository<RvtEvent
      */
     @Override
     public Optional<List<RvtTableGroups>> getTableGroupsOrderByPriority(String eventGroupName) {
-        Optional<RvtEventGroups> eventGroupResult = super.findOne(()-> eventGroupName);
+        Optional<RvtEventGroups> eventGroupResult = super.findOne(new RvtEventGroupsKey(eventGroupName));
         if(eventGroupResult.isEmpty()){
             return Optional.empty();
         }
