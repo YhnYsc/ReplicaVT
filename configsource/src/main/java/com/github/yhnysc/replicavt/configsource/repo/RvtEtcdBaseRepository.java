@@ -90,32 +90,45 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
         if (key == null) {
             throw new IllegalArgumentException("Key shouldn't be null!");
         }
-        if(!getOption.isPrefix()){
+        if (!getOption.isPrefix()){
             throw new IllegalArgumentException("The GetOption must set to isPrefix(true) for this method");
         }
+        final TxnAdapter transaction = _etcdTransactionManager.getTransaction();
         final String prefixKeyPath = etcdPrefix() + key.etcdKey();
         try{
-            // Search the data that have put operation in transaction
-            final List<Map.Entry<ByteSequence,T>> dataListInTransaction = findDataInTransaction(getOption, key);
+            final Map<ByteSequence, OpAdapter> lastOperationOnKeys = transaction.getLastOperationOnKeys(stringToEtcdByteSeq(prefixKeyPath));
 
             final GetResponse resp = _etcdCli.getKVClient().get(
                     stringToEtcdByteSeq(prefixKeyPath), getOption).get();
 
             if(resp.getKvs().isEmpty()){
                 // Simply return the data in transaction if any
-                return dataListInTransaction.stream().map(Map.Entry::getValue).collect(Collectors.toList());
+                final List<T> transactionOnlyResult = filterAndSortDataInTransaction(lastOperationOnKeys.values().stream().toList(), getOption).stream()
+                        .map(sortedOperationInTransaction -> convertJsonToObj(sortedOperationInTransaction.getValue()))
+                        .collect(Collectors.toList());
+                log.info("Retrieved prefix %s, count[%d] in transaction".formatted(prefixKeyPath, transactionOnlyResult.size()));
+                return transactionOnlyResult;
             }
             log.info("Retrieved all of '%s'".formatted(prefixKeyPath));
-            final Map<ByteSequence, T> respMap = resp.getKvs().stream()
-                    .map(kv -> Map.entry(kv.getKey(), _gson.fromJson(kv.getValue().toString(), _structClass)))
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
-            // If resp and transaction have the same data, use data in transaction
-            dataListInTransaction.forEach(
-                    (tranKv) -> respMap.merge(tranKv.getKey(), tranKv.getValue(), (respData, tranData) -> tranData)
-            );
-
-            return respMap.values().stream().toList();
+            final List<OpAdapter> resultList = new ArrayList<>();
+            resp.getKvs().forEach(kvFromResp -> {
+                final OpAdapter lastOperationInTransaction = lastOperationOnKeys.remove(kvFromResp.getKey());
+                if (lastOperationInTransaction != null && lastOperationInTransaction.isPut()){
+                    // Use the value in the update operation as it is the latest
+                    resultList.add(lastOperationInTransaction);
+                }else {
+                    // Simply use the value from the response
+                    resultList.add(OpAdapter.builder()
+                            .key(kvFromResp.getKey())
+                            .value(kvFromResp.getValue())
+                            .build());
+                }
+            });
+            //TODO: 1. Sort the operationsInTransaction by GetOption.SortTarget and SortOrder
+            //      2. merge the sorted list to response list (because the response list already sorted by EtcdCli
+            //      - Sorting by CREATE, MOD, VERSION will always append to first (Desc) / last (Asc) of the response list
+            //      - Sorting by KEY, VALUE will compare value from two lists
+            return null;
         } catch (Exception e) {
             throw new DatabaseException("Failed to retrieve all of '%s'".formatted(prefixKeyPath));
         }
@@ -125,25 +138,31 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
         if (key == null) {
             throw new IllegalArgumentException("Key shouldn't be null!");
         }
+        final TxnAdapter transaction = _etcdTransactionManager.getTransaction();
         final String fullKeyPath = etcdPrefix() + key.etcdKey();
         try{
-            // Search the data that have put operation in transaction. If existed, return that value as it is the latest one
-            final Optional<Map.Entry<ByteSequence,T>> dataInTransaction = findDataInTransaction(getOption, key).stream().findFirst();
-            if(dataInTransaction.isPresent()){
-                return Optional.of(dataInTransaction.get().getValue());
+            final Optional<OpAdapter> lastOperationOnKey = transaction.getLastOperationOnKey(stringToEtcdByteSeq(fullKeyPath));
+            if (lastOperationOnKey.isPresent()){
+                // If the last operation is update, return value of the update operation
+                // If the last operation is deletion, return no data
+                log.info("Retrieved %s in transaction".formatted(fullKeyPath));
+                return Optional.ofNullable(lastOperationOnKey.get().isPut() ? convertJsonToObj(lastOperationOnKey.get().getValue()) : null);
+            }else {
+                // Search from etcd cluster
+                final GetResponse resp = _etcdCli.getKVClient().get(
+                        stringToEtcdByteSeq(fullKeyPath), getOption).get();
+                if (resp.getKvs().isEmpty()) {
+                    return Optional.empty();
+                }
+                log.info("Retrieved %s".formatted(fullKeyPath));
+                return Optional.of(_gson.fromJson(resp.getKvs().get(0).getValue().toString(), _structClass));
             }
-            // Search from etcd cluster
-            final GetResponse resp = _etcdCli.getKVClient().get(
-                    stringToEtcdByteSeq(fullKeyPath), getOption).get();
-            if(resp.getKvs().isEmpty()){
-                return Optional.empty();
-            }
-            log.info("Retrieved %s".formatted(fullKeyPath));
-            return Optional.of(_gson.fromJson(resp.getKvs().get(0).getValue().toString(), _structClass));
         } catch (Exception e) {
             throw new DatabaseException("Failed to retrieve %s".formatted(fullKeyPath));
         }
     }
+
+
 
     protected List<Map.Entry<ByteSequence,T>> findDataInTransaction(final GetOption getOption, final K key){
         final List<Map.Entry<ByteSequence,T>> dataList = new ArrayList<>();
@@ -171,7 +190,7 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
                     case PUT:
                         if (!processedKeyInTxnMap.contains(opAdapter.getKey())) {
                             // Not processed and no deletion, add to the return data list and mark processed
-                            final T data = _gson.fromJson(opAdapter.getValue().toString(), _structClass);
+                            final T data = convertJsonToObj(opAdapter.getValue());
                             dataList.add(Map.entry(opAdapter.getKey(), data));
                             processedKeyInTxnMap.add(opAdapter.getKey());
                         }
@@ -184,15 +203,19 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
             // If the last operation is deletion or no update operation-> Not Found
             // else return the value of last update operation
             operationsOnKey.stream()
-                    .filter(opAdapter -> {return opAdapter.isPut() || opAdapter.isDelete();})
+                    .filter(opAdapter -> opAdapter.isPut() || opAdapter.isDelete())
                     .findFirst().ifPresent(lastOp ->{
                         if(lastOp.isPut()){
-                            final T data = _gson.fromJson(lastOp.getValue().toString(), _structClass);
+                            final T data = convertJsonToObj(lastOp.getValue());
                             dataList.add(Map.entry(lastOp.getKey(), data));
                         }
                     });
         }
         return dataList;
+    }
+
+    private T convertJsonToObj(ByteSequence value){
+        return _gson.fromJson(value.toString(), _structClass);
     }
 
     private String etcdPrefix(){
@@ -201,5 +224,31 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
 
     private static ByteSequence stringToEtcdByteSeq(String s1){
         return ByteSequence.from(ByteString.copyFromUtf8(s1));
+    }
+
+    private static List<OpAdapter> filterAndSortDataInTransaction(List<OpAdapter> remainingOperationFromMap, GetOption getOption){
+        return remainingOperationFromMap.stream()
+                .filter(OpAdapter::isPut) // ignore data with last operation is deletion
+                .sorted((op1, op2) -> {
+                    switch(getOption.getSortField()){
+                        case KEY:
+                            return GetOption.SortOrder.ASCEND == getOption.getSortOrder() ?
+                                    op1.getKey().toString().compareTo(op2.getKey().toString()) :
+                                    op2.getKey().toString().compareTo(op1.getKey().toString());
+                        case VALUE:
+                            return GetOption.SortOrder.ASCEND == getOption.getSortOrder() ?
+                                    op1.getValue().toString().compareTo(op2.getValue().toString()) :
+                                    op2.getValue().toString().compareTo(op1.getValue().toString());
+                        case CREATE:
+                        case MOD:
+                        case VERSION:
+                        default:
+                            //Create, Mod, Version just order by timestamp
+                            return GetOption.SortOrder.ASCEND == getOption.getSortOrder() ?
+                                    op1.getOpTime().compareTo(op2.getOpTime()) :
+                                    op2.getOpTime().compareTo(op1.getOpTime());
+                    }
+                })
+                .collect(Collectors.toList());
     }
 }

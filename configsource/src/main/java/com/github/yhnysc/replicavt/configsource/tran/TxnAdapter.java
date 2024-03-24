@@ -3,10 +3,7 @@ package com.github.yhnysc.replicavt.configsource.tran;
 import io.etcd.jetcd.ByteSequence;
 import io.etcd.jetcd.Txn;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public final class TxnAdapter{
@@ -37,6 +34,21 @@ public final class TxnAdapter{
                 .collect(Collectors.toList());
     }
 
+    public Optional<OpAdapter> getLastOperationOnKey(ByteSequence key){
+        final List<OpAdapter> operationsOnKey = getOperationsOnKey(key, false);
+        Collections.reverse(operationsOnKey);
+        return operationsOnKey.stream().filter(opAdapter -> opAdapter.isPut() || opAdapter.isDelete()).findFirst();
+    }
+
+    public Map<ByteSequence, OpAdapter> getLastOperationOnKeys(ByteSequence prefixKey){
+        final Map<ByteSequence, OpAdapter> lastOperationOnKeysMap = new HashMap<>();
+        final List<OpAdapter> operationsOnKey = getOperationsOnKey(prefixKey, true);
+        operationsOnKey.forEach(opAdapter -> {
+            lastOperationOnKeysMap.put(opAdapter.getKey(), opAdapter);
+        });
+        return lastOperationOnKeysMap;
+    }
+
     public void commit(){
         try {
             // Convert the OpAdapter to Op (the Etcd transaction's operation object)
@@ -46,10 +58,14 @@ public final class TxnAdapter{
                                 _transaction.Then(op);
                             }
                     );
-            _transaction.commit();
-        }finally{
+            _transaction.commit().join();
+        } finally{
             // Clear the transactions cache anyway
             _operationsInTransaction.clear();
         }
+    }
+
+    public void rollback(){
+        _operationsInTransaction.clear();
     }
 }

@@ -1,6 +1,7 @@
 package com.github.yhnysc.replicavt.configsource.api;
 
 
+import com.github.yhnysc.replicavt.configsource.svc.RvtEtcdTransactionManager;
 import com.github.yhnysc.replicavt.configsource.test.EtcdRepositoryTest;
 import com.github.yhnysc.replicavt.configsource.entity.RvtTables;
 import com.github.yhnysc.replicavt.configsource.entity.RvtTablesKey;
@@ -23,6 +24,8 @@ public class RvtTablesRepositoryTest {
 
     @Autowired
     private RvtTablesRepository _tablesRepo;
+    @Autowired
+    private RvtEtcdTransactionManager _etcdTransactionManager;
 
     @Test
     @DisplayName("SaveFind_1_Record_ExpectedSuccess")

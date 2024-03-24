@@ -16,7 +16,10 @@ public class RvtEtcdTransactionManager {
     }
 
     public TxnAdapter getTransaction(){
-        return _transaction.get() != null ? _transaction.get() : new TxnAdapter(_etcdCli.getKVClient().txn());
+        if (_transaction.get() == null){
+            _transaction.set(new TxnAdapter(_etcdCli.getKVClient().txn()));
+        }
+        return  _transaction.get();
     }
 
 //    public void lockAcquire(String key, long leaseTimeInSecond){

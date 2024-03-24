@@ -9,6 +9,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.experimental.Accessors;
 
+import java.time.Instant;
+
 @Builder(toBuilder = true)
 @Accessors(prefix="_")
 @Getter
@@ -19,6 +21,7 @@ public class OpAdapter {
     private PutOption _putOption;
     private DeleteOption _deleteOption;
     private GetOption _getOption;
+    private Instant _opTime;
 
     public Op toOp(){
         if(_opType == null){
@@ -47,16 +50,20 @@ public class OpAdapter {
 
     public static OpAdapter put(ByteSequence key, ByteSequence value, PutOption putOption){
         return OpAdapter.builder()
+                .opType(Op.Type.PUT)
                 .key(key)
                 .value(value)
                 .putOption(putOption)
+                .opTime(Instant.now())
                 .build();
     }
 
     public static OpAdapter delete(ByteSequence key, DeleteOption deleteOption){
         return OpAdapter.builder()
+                .opType(Op.Type.DELETE_RANGE)
                 .key(key)
                 .deleteOption(deleteOption)
+                .opTime(Instant.now())
                 .build();
     }
 }
