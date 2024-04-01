@@ -4,6 +4,8 @@ import com.github.yhnysc.replicavt.configsource.annotation.EtcdPrefix;
 import com.github.yhnysc.replicavt.configsource.api.RvtStruct;
 
 import java.io.Serializable;
+import java.sql.Timestamp;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,6 +15,7 @@ public class RvtEventGroups implements RvtStruct, Serializable {
     private String _eventGroupName;
     private int _bulkSize;
     private List<RvtTableGroups> _tableGroups;
+    private OffsetDateTime _updateTime;
 
     @Override
     public String uniqueKey() {
@@ -50,4 +53,15 @@ public class RvtEventGroups implements RvtStruct, Serializable {
     public void setBulkSize(int bulkSize) {
         _bulkSize = bulkSize;
     }
+
+    @Override
+    public OffsetDateTime getTimestamp() {
+        return _updateTime;
+    }
+
+    @Override
+    public void setTimestamp(OffsetDateTime updateTime) {
+        _updateTime = updateTime;
+    }
+
 }

@@ -1,5 +1,7 @@
 package com.github.yhnysc.replicavt.configsource.api;
 
+import java.time.OffsetDateTime;
+
 public interface RvtStruct {
     /**
      * Return ETCD prefix of this data type
@@ -7,5 +9,7 @@ public interface RvtStruct {
      * @return Value of <prefix>
      */
     String uniqueKey();
+    void setTimestamp(OffsetDateTime time);
+    OffsetDateTime getTimestamp();
 
 }

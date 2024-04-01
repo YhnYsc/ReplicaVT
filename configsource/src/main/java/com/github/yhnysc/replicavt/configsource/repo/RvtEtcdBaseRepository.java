@@ -16,8 +16,11 @@ import io.etcd.jetcd.options.DeleteOption;
 import io.etcd.jetcd.options.GetOption;
 import io.etcd.jetcd.options.PutOption;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 
+import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -45,10 +48,13 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
         }
         final TxnAdapter transaction = _etcdTransactionManager.getTransaction();
         final String fullKeyPath = etcdPrefix() + data.uniqueKey();
+        // Set the timestamp field
+        data.setTimestamp(OffsetDateTime.now());
         try {
             transaction.Then(OpAdapter.put(
                     stringToEtcdByteSeq(fullKeyPath),
                     stringToEtcdByteSeq(_gson.toJson(data)),
+                    data.getTimestamp(),
                     PutOption.DEFAULT)
             );
             log.info("Save data, path [%s]".formatted(fullKeyPath));
@@ -81,12 +87,12 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
     }
 
     @Override
-    public List<T> findAll(final K key){
+    public List<T> findAll(final RvtEtcdKey key){
         return findAll(GetOption.newBuilder().isPrefix(true).build(), key);
     }
 
 
-    protected List<T> findAll(final GetOption getOption, final K key) {
+    protected List<T> findAll(final GetOption getOption, final RvtEtcdKey key) {
         if (key == null) {
             throw new IllegalArgumentException("Key shouldn't be null!");
         }
@@ -98,37 +104,39 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
         try{
             final Map<ByteSequence, OpAdapter> lastOperationOnKeys = transaction.getLastOperationOnKeys(stringToEtcdByteSeq(prefixKeyPath));
 
-            final GetResponse resp = _etcdCli.getKVClient().get(
-                    stringToEtcdByteSeq(prefixKeyPath), getOption).get();
-
-            if(resp.getKvs().isEmpty()){
-                // Simply return the data in transaction if any
-                final List<T> transactionOnlyResult = filterAndSortDataInTransaction(lastOperationOnKeys.values().stream().toList(), getOption).stream()
-                        .map(sortedOperationInTransaction -> convertJsonToObj(sortedOperationInTransaction.getValue()))
-                        .collect(Collectors.toList());
-                log.info("Retrieved prefix %s, count[%d] in transaction".formatted(prefixKeyPath, transactionOnlyResult.size()));
-                return transactionOnlyResult;
+            // Response from etcd cluster
+            final GetResponse resp = _etcdCli.getKVClient().get(stringToEtcdByteSeq(prefixKeyPath), getOption).get();
+            final List<OpAdapter> unsortedOperationFromResp = new ArrayList<>();
+            if (!resp.getKvs().isEmpty()){
+                log.info("Retrieved prefix %s, count[%d] from etcd cluster".formatted(prefixKeyPath, resp.getKvs().stream().count()));
+                resp.getKvs().forEach(kvFromResp -> {
+                    final OpAdapter lastOperationInTransaction = lastOperationOnKeys.remove(kvFromResp.getKey());
+                    if (lastOperationInTransaction != null) {
+                        if (lastOperationInTransaction.isPut()) {
+                            // Use the value in the update operation as it is the latest
+                            unsortedOperationFromResp.add(lastOperationInTransaction);
+                        }
+                    }else {
+                        // No operation in transaction. Simply use the value from the response
+                        final ByteSequence valueFromResp = kvFromResp.getValue();
+                        unsortedOperationFromResp.add(OpAdapter.builder()
+                                .key(kvFromResp.getKey())
+                                .value(valueFromResp)
+                                .opTime(getTimestampOfData(valueFromResp))
+                                .build());
+                    }
+                });
             }
-            log.info("Retrieved all of '%s'".formatted(prefixKeyPath));
-            final List<OpAdapter> resultList = new ArrayList<>();
-            resp.getKvs().forEach(kvFromResp -> {
-                final OpAdapter lastOperationInTransaction = lastOperationOnKeys.remove(kvFromResp.getKey());
-                if (lastOperationInTransaction != null && lastOperationInTransaction.isPut()){
-                    // Use the value in the update operation as it is the latest
-                    resultList.add(lastOperationInTransaction);
-                }else {
-                    // Simply use the value from the response
-                    resultList.add(OpAdapter.builder()
-                            .key(kvFromResp.getKey())
-                            .value(kvFromResp.getValue())
-                            .build());
-                }
-            });
-            //TODO: 1. Sort the operationsInTransaction by GetOption.SortTarget and SortOrder
-            //      2. merge the sorted list to response list (because the response list already sorted by EtcdCli
-            //      - Sorting by CREATE, MOD, VERSION will always append to first (Desc) / last (Asc) of the response list
-            //      - Sorting by KEY, VALUE will compare value from two lists
-            return null;
+            // Filter update operations in transaction and sort them
+            final List<OpAdapter> operationInTransaction = lastOperationOnKeys.values().stream()
+                    .filter(OpAdapter::isPut) // ignore data with last operation is deletion
+                    .sorted(opAdapterComparator(getOption))
+                    .collect(Collectors.toList());
+            log.info("Retrieved prefix %s, count[%d] in transaction".formatted(prefixKeyPath, operationInTransaction.size()));
+            final List<OpAdapter> operationFromResp = unsortedOperationFromResp.stream()
+                    .sorted(opAdapterComparator(getOption))
+                    .collect(Collectors.toList());
+            return mergeDataFromRespAndInTransaction(operationFromResp, operationInTransaction, getOption);
         } catch (Exception e) {
             throw new DatabaseException("Failed to retrieve all of '%s'".formatted(prefixKeyPath));
         }
@@ -154,8 +162,8 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
                 if (resp.getKvs().isEmpty()) {
                     return Optional.empty();
                 }
-                log.info("Retrieved %s".formatted(fullKeyPath));
-                return Optional.of(_gson.fromJson(resp.getKvs().get(0).getValue().toString(), _structClass));
+                log.info("Retrieved %s from etcd cluster".formatted(fullKeyPath));
+                return Optional.of(convertJsonToObj(resp.getKvs().get(0).getValue()));
             }
         } catch (Exception e) {
             throw new DatabaseException("Failed to retrieve %s".formatted(fullKeyPath));
@@ -226,29 +234,42 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
         return ByteSequence.from(ByteString.copyFromUtf8(s1));
     }
 
-    private static List<OpAdapter> filterAndSortDataInTransaction(List<OpAdapter> remainingOperationFromMap, GetOption getOption){
-        return remainingOperationFromMap.stream()
-                .filter(OpAdapter::isPut) // ignore data with last operation is deletion
-                .sorted((op1, op2) -> {
-                    switch(getOption.getSortField()){
-                        case KEY:
-                            return GetOption.SortOrder.ASCEND == getOption.getSortOrder() ?
-                                    op1.getKey().toString().compareTo(op2.getKey().toString()) :
-                                    op2.getKey().toString().compareTo(op1.getKey().toString());
-                        case VALUE:
-                            return GetOption.SortOrder.ASCEND == getOption.getSortOrder() ?
-                                    op1.getValue().toString().compareTo(op2.getValue().toString()) :
-                                    op2.getValue().toString().compareTo(op1.getValue().toString());
-                        case CREATE:
-                        case MOD:
-                        case VERSION:
-                        default:
-                            //Create, Mod, Version just order by timestamp
-                            return GetOption.SortOrder.ASCEND == getOption.getSortOrder() ?
-                                    op1.getOpTime().compareTo(op2.getOpTime()) :
-                                    op2.getOpTime().compareTo(op1.getOpTime());
-                    }
-                })
-                .collect(Collectors.toList());
+    private OffsetDateTime getTimestampOfData(ByteSequence value){
+        return convertJsonToObj(value).getTimestamp();
+    }
+
+    private static Comparator<OpAdapter> opAdapterComparator(GetOption getOption){
+        return (op1, op2) -> {
+            switch (getOption.getSortField()) {
+                case KEY:
+                    return opAdapterCompareWithByteSeq(OpAdapter::getKey, op1, op2, getOption.getSortOrder());
+                case VALUE:
+                    return opAdapterCompareWithByteSeq(OpAdapter::getValue, op1, op2, getOption.getSortOrder());
+                case CREATE:
+                case MOD:
+                case VERSION:
+                default:
+                    //Create, Mod, Version order by timestamp
+                    return opAdapterCompareWithTime(op1, op2, getOption.getSortOrder());
+            }
+        };
+    }
+
+    private static int opAdapterCompareWithByteSeq(Function<OpAdapter, ByteSequence> getCmpValueMethod, OpAdapter op1, OpAdapter op2, GetOption.SortOrder sortOrder){
+        return GetOption.SortOrder.ASCEND == sortOrder ?
+                getCmpValueMethod.apply(op1).toString().compareTo(getCmpValueMethod.apply(op2).toString()) :
+                getCmpValueMethod.apply(op2).toString().compareTo(getCmpValueMethod.apply(op1).toString());
+    }
+
+    private static int opAdapterCompareWithTime(OpAdapter op1, OpAdapter op2, GetOption.SortOrder sortOrder){
+        return GetOption.SortOrder.ASCEND == sortOrder ?
+                op1.getOpTime().compareTo(op2.getOpTime()) :
+                op2.getOpTime().compareTo(op1.getOpTime());
+    }
+
+    private List<T> mergeDataFromRespAndInTransaction(List<OpAdapter> respDataList, List<OpAdapter> operationInTransactionList, GetOption getOption){
+        final List<OpAdapter> operationList;
+        operationList = CollectionUtils.collate(respDataList, operationInTransactionList, opAdapterComparator(getOption));
+        return operationList.stream().map(opAdapter -> convertJsonToObj(opAdapter.getValue())).collect(Collectors.toList());
     }
 }

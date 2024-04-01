@@ -30,12 +30,7 @@ public class RvtTablesRepositoryImpl extends RvtEtcdBaseRepository<RvtTables, Rv
                 .withLimit(1)
                 .build();
         // Override the etcdKey() to include only tableSchema and tableName (without tableVersion), as a prefix
-        final List<RvtTables> tablesList = super.findAll(getOption, new RvtTablesKey(tableSchema, tableName){
-            @Override
-            public String etcdKey(){
-                return RvtEtcdKey.contructEtcdKey(tableSchema, tableName);
-            }
-        });
+        final List<RvtTables> tablesList = super.findAll(getOption, () -> RvtEtcdKey.contructEtcdKey(tableSchema, tableName));
         return Optional.ofNullable(tablesList.size() > 0 ? tablesList.get(0) : null);
     }
 }

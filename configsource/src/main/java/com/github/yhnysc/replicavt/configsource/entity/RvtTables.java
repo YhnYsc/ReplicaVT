@@ -5,7 +5,7 @@ import com.github.yhnysc.replicavt.configsource.api.RvtStruct;
 import io.etcd.jetcd.ByteSequence;
 
 import java.io.Serializable;
-import java.sql.Timestamp;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,7 +20,7 @@ public class RvtTables implements RvtStruct, Serializable {
     private List<ColMetadata> _lobColMetadata;
     private List<ColMetadata> _cnfColMetadata;
     private String _cnfRule;
-    private Timestamp _createTimestamp;
+    private OffsetDateTime _createTime;
 
     @Override
     public String uniqueKey() {
@@ -118,12 +118,14 @@ public class RvtTables implements RvtStruct, Serializable {
         _cnfRule = cnfRule;
     }
 
-    public Timestamp getCreateTimestamp() {
-        return _createTimestamp;
+    @Override
+    public OffsetDateTime getTimestamp() {
+        return _createTime;
     }
 
-    public void setCreateTimestamp(Timestamp createTimestamp) {
-        _createTimestamp = createTimestamp;
+    @Override
+    public void setTimestamp(OffsetDateTime createTime) {
+        _createTime = createTime;
     }
 
     public static class ColMetadata{
