@@ -57,6 +57,7 @@ public abstract class RvtEtcdBaseRepository<T extends RvtStruct, K extends RvtEt
                     data.getTimestamp(),
                     PutOption.DEFAULT)
             );
+            transaction.commit();
             log.info("Save data, path [%s]".formatted(fullKeyPath));
         } catch (Exception e) {
             throw new DatabaseException("Failed to save %s".formatted(fullKeyPath), e);

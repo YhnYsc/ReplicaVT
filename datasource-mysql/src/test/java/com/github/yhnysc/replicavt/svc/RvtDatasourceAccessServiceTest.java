@@ -32,6 +32,8 @@ public class RvtDatasourceAccessServiceTest {
         final List<RvtTables.ColMetadata> colMetadataList = _service.getColumnMetadata(_dbSchema, "test_table");
         Assertions.assertNotNull(colMetadataList);
         Assertions.assertFalse(colMetadataList.isEmpty());
+        Assertions.assertEquals("LONGVARCHAR", colMetadataList.get(6).getType());
+        Assertions.assertEquals(true, colMetadataList.get(6).isNullable());
     }
 
     @Test

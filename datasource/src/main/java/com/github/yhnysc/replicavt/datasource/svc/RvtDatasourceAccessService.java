@@ -7,9 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -36,8 +34,9 @@ public class RvtDatasourceAccessService {
             while (resultSet.next()){
                 final RvtTables.ColMetadata colMetadata = new RvtTables.ColMetadata(
                     resultSet.getString("COLUMN_NAME"),
-                    resultSet.getString("TYPE_NAME"),
-                    calculateColumnSize(resultSet)
+                    JDBCType.valueOf(resultSet.getInt("DATA_TYPE")).getName(),
+                    calculateColumnSize(resultSet),
+                    isColumnNullable(resultSet)
                 );
                 colMetadataList.add(colMetadata);
             }
@@ -152,6 +151,17 @@ public class RvtDatasourceAccessService {
                 //For Fraction Percision
                 + (resultSet.getString("DECIMAL_DIGITS") != null ?
                 SIGNED_DIGIT + DOT : 0);
+    }
+
+    protected boolean isColumnNullable(final ResultSet resultSet) throws SQLException {
+        switch (resultSet.getInt("NULLABLE")){
+            case ResultSetMetaData.columnNoNulls:
+                return false;
+            default:
+            //case ResultSetMetaData.columnNullable:
+            //case ResultSetMetaData.columnNullableUnknown:
+                return true;
+        }
     }
 
 }

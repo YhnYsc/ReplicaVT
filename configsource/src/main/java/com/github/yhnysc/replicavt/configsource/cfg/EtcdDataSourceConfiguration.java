@@ -1,5 +1,8 @@
 package com.github.yhnysc.replicavt.configsource.cfg;
 
+import com.github.yhnysc.replicavt.configsource.entity.RvtNodeConfig;
+import com.github.yhnysc.replicavt.configsource.entity.RvtNodeConfigKey;
+import com.github.yhnysc.replicavt.configsource.repo.RvtNodeConfigRepository;
 import com.github.yhnysc.replicavt.configsource.utils.SslUtil;
 import io.etcd.jetcd.ByteSequence;
 import io.etcd.jetcd.Client;
@@ -7,10 +10,9 @@ import io.etcd.jetcd.ClientBuilder;
 import io.grpc.netty.GrpcSslContexts;
 import io.netty.handler.ssl.SslContextBuilder;
 import lombok.SneakyThrows;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.context.annotation.*;
 import org.springframework.util.StringUtils;
 
 import javax.net.ssl.SSLException;
@@ -55,6 +57,10 @@ public class EtcdDataSourceConfiguration {
     @Value("${etcd-cacert:}")
     private String _etcdCaCert;
 
+    //TODO: Set the value from env/properties/cli
+    @Value("${rvt.node-name:MASTER-NODE}")
+    private String _nodeName;
+
     @Bean
     public Client etcdClient() {
         // If specified --config, use the content in config file to override option's value
@@ -94,6 +100,16 @@ public class EtcdDataSourceConfiguration {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Primary
+    @Bean
+    @DependsOn({"etcdClient", "gson", "rvtNodeConfigRepository"})
+    public RvtNodeConfig dataSourceFromConfig(@Qualifier("etcdClient") Client etcdCli, @Qualifier("rvtNodeConfigRepository") RvtNodeConfigRepository nodeConfigRepo){
+        if (!StringUtils.hasText(_nodeName)){
+            return null;
+        }
+        return nodeConfigRepo.findOne(new RvtNodeConfigKey(_nodeName)).orElse(null);
     }
 
     @SneakyThrows

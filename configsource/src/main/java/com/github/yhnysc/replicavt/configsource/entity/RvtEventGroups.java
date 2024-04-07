@@ -4,12 +4,11 @@ import com.github.yhnysc.replicavt.configsource.annotation.EtcdPrefix;
 import com.github.yhnysc.replicavt.configsource.api.RvtStruct;
 
 import java.io.Serializable;
-import java.sql.Timestamp;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@EtcdPrefix("eventgroups")
+@EtcdPrefix("EventGroup")
 public class RvtEventGroups implements RvtStruct, Serializable {
 
     private String _eventGroupName;

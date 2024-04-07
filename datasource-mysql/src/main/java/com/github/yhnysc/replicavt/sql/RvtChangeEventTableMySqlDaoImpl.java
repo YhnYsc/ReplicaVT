@@ -3,10 +3,12 @@ package com.github.yhnysc.replicavt.sql;
 import com.github.yhnysc.replicavt.annotation.MySqlBean;
 import com.github.yhnysc.replicavt.datasource.api.RvtChangeEventTableDao;
 import com.github.yhnysc.replicavt.datasource.entity.RvtChangeEventEntity;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
-@MySqlBean
+@Component
 public class RvtChangeEventTableMySqlDaoImpl implements RvtChangeEventTableDao {
 
     private final RvtChangeEventTableMySqlMapper _mapper;

@@ -9,7 +9,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@EtcdPrefix("tables")
+@EtcdPrefix("Table")
 public class RvtTables implements RvtStruct, Serializable {
 
     private String _tableSchema;
@@ -28,29 +28,30 @@ public class RvtTables implements RvtStruct, Serializable {
         return String.join(ByteSequence.NAMESPACE_DELIMITER.toString(), _tableSchema, _tableName, String.valueOf(_tableVersion));
     }
 
-    public void addKeyCol(String name, String type, int size){
+    public void addKeyCol(String name, String type, int size, boolean nullable){
         if(_keyColMetadata == null){
             _keyColMetadata = new ArrayList<>();
         }
-        _keyColMetadata.add(new ColMetadata(name, type, size));
+        _keyColMetadata.add(new ColMetadata(name, type, size, nullable));
     }
-    public void addPlainCol(String name, String type, int size){
+    public void addPlainCol(String name, String type, int size, boolean nullable){
         if(_plainColMetadata == null){
             _plainColMetadata = new ArrayList<>();
         }
-        _plainColMetadata.add(new ColMetadata(name, type, size));
+        _plainColMetadata.add(new ColMetadata(name, type, size, nullable));
     }
-    public void addLobCol(String name, String type, int size){
+    public void addLobCol(String name, String type, int size, boolean nullable){
         if(_lobColMetadata == null){
             _lobColMetadata = new ArrayList<>();
         }
-        _lobColMetadata.add(new ColMetadata(name, type, size));
+        _lobColMetadata.add(new ColMetadata(name, type, size, nullable));
     }
     public void addCnfCol(String name, String type, int size){
         if(_cnfColMetadata == null){
             _cnfColMetadata = new ArrayList<>();
         }
-        _cnfColMetadata.add(new ColMetadata(name, type, size));
+        // Conflict Column cannot be null
+        _cnfColMetadata.add(new ColMetadata(name, type, size, false));
     }
 
 
@@ -132,13 +133,15 @@ public class RvtTables implements RvtStruct, Serializable {
         private String _name;
         private String _type;
         private int _size;
+        private boolean _nullable;
 
         public ColMetadata(){}
 
-        public ColMetadata(String name, String type, int size){
+        public ColMetadata(String name, String type, int size, boolean nullable){
             _name = name;
             _type = type;
             _size = size;
+            _nullable = nullable;
         }
 
         public String getName() {
@@ -163,6 +166,14 @@ public class RvtTables implements RvtStruct, Serializable {
 
         public void setSize(int size) {
             _size = size;
+        }
+
+        public boolean isNullable() {
+            return _nullable;
+        }
+
+        public void setNullable(boolean nullable) {
+            _nullable = nullable;
         }
     }
 }

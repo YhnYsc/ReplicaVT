@@ -7,7 +7,9 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.ComponentScan;
 
-@SpringBootApplication
+@SpringBootApplication(excludeName = {
+        "org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration"
+})
 public class RvtMain {
     public static void main(String[] args){
         final SpringApplication app = new SpringApplicationBuilder()
